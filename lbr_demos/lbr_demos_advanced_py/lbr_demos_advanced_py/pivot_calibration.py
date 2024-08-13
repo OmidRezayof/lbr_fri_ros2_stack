@@ -4,18 +4,12 @@ import threading
 import sys
 import select
 import lbr_demos_py.asbr 
+from rclpy.node import Node
 
 from geometry_msgs.msg import Pose
 
-from lbr_fri_idl.msg import LBRState
-
-from .admittance_controller import AdmittanceController
-from .lbr_base_position_command_node import LBRBasePositionCommandNode
-
 capture_request = False
 edge_calib_req = False
-
-
 
 def listen_for_keypress(node):
     global capture_request, edge_calib_req
@@ -34,41 +28,12 @@ def listen_for_keypress(node):
                 edge_calib_req = True
                 print('Edge Calibration: Capture requested.')
 
-class PivotCalibrationNode(LBRBasePositionCommandNode):
+class PivotCalibrationNode(Node):
     def __init__(self, node_name: str = "pivot_calib") -> None:
         super().__init__(node_name=node_name)
 
         # parameters
-        self.declare_parameter("base_link", "link_0")
-        self.declare_parameter("end_effector_link", "link_ee")
-        self.declare_parameter("f_ext_th", [2.0, 2.0, 8.0, 10.0, 10.0, 10.0])
-        self.declare_parameter("dq_gains", [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        self.declare_parameter("dx_gains", [0.2, 0.2, 0.2, 0.4, 0.4, 0.4])
-        self.declare_parameter("exp_smooth", 0.95)
-
         self._init = False
-        self._lbr_state = LBRState()
-        self._exp_smooth = (
-            self.get_parameter("exp_smooth").get_parameter_value().double_value
-        )
-        if self._exp_smooth < 0.0 or self._exp_smooth > 1.0:
-            raise ValueError("Exponential smoothing factor must be in [0, 1].")
-
-        self._controller = AdmittanceController(
-            robot_description=self._robot_description,
-            base_link=self.get_parameter("base_link")
-            .get_parameter_value()
-            .string_value,
-            end_effector_link=self.get_parameter("end_effector_link")
-            .get_parameter_value()
-            .string_value,
-            f_ext_th = self.get_parameter('f_ext_th').value,
-            dq_gains = self.get_parameter('dq_gains').value,
-            dx_gains = self.get_parameter('dx_gains').value,
-        )
-
-        # log parameters to terminal
-        self._log_parameters()
 
         self.curr_pose_subs = self.create_subscription(Pose, 'state/pose', self.curr_pose_update, 1)
         self.curr_pose = Pose()
@@ -77,45 +42,16 @@ class PivotCalibrationNode(LBRBasePositionCommandNode):
 
         self.Edge_Calibration_Poses = []
 
-    def _log_parameters(self) -> None:
-        self.get_logger().info("*** Parameters:")
-        self.get_logger().info(
-            f"*   base_link: {self.get_parameter('base_link').value}"
-        )
-        self.get_logger().info(
-            f"*   end_effector_link: {self.get_parameter('end_effector_link').value}"
-        )
-        self.get_logger().info(f"*   f_ext_th: {self.get_parameter('f_ext_th').value}")
-        self.get_logger().info(f"*   dq_gains: {self.get_parameter('dq_gains').value}")
-        self.get_logger().info(f"*   dx_gains: {self.get_parameter('dx_gains').value}")
-        self.get_logger().info(f"*   exp_smooth: {self.get_parameter('exp_smooth').value}")
-
-    def _on_lbr_state(self, lbr_state: LBRState) -> None:
-        self._smooth_lbr_state(lbr_state)
-
-        lbr_command = self._controller(self._lbr_state, self._dt)
-        self._lbr_joint_position_command_pub.publish(lbr_command)
-
-    def _smooth_lbr_state(self, lbr_state: LBRState) -> None:
-        if not self._init:
-            self._lbr_state = lbr_state
-            self._init = True
-            return
-
-        self._lbr_state.measured_joint_position = (
-            (1 - self._exp_smooth)
-            * np.array(self._lbr_state.measured_joint_position.tolist())
-            + self._exp_smooth * np.array(lbr_state.measured_joint_position.tolist())
-        ).data
-
-        self._lbr_state.external_torque = (
-            (1 - self._exp_smooth) * np.array(self._lbr_state.external_torque.tolist())
-            + self._exp_smooth * np.array(lbr_state.external_torque.tolist())
-        ).data
-
+    
     def curr_pose_update(self, msg):
         self.curr_pose = msg
         global capture_request, edge_calib_req
+        if not self._init:
+            print('Press "c" for capturing a Pivot Calibration pose,')
+            print('Press "h" for capturing an Edge Calibration pose,')
+            print('Press "e" to quit.')
+            return
+
         if capture_request: #Capturing the pose of Dali for performing pivot calibration
             self.Pivot_Calibration_Poses.append(msg)
             print('Pivot Calibration: Pose Added! Total number of poses is {}'.format(len(self.Pivot_Calibration_Poses)))
@@ -135,10 +71,6 @@ class PivotCalibrationNode(LBRBasePositionCommandNode):
                 print('Radius: ', radius)
                 print('height: ', height)
             edge_calib_req = False
-
-
-
-
 
 
     def run_pivot_calibration(self, poses):
