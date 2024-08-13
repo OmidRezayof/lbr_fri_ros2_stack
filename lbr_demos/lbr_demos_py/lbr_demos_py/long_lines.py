@@ -113,9 +113,12 @@ class PrintLines(Node):
         num_lines = 1
         direction = 1
         needle_position_file_counter = 0
-        print_vel = 0.8 #TODO
-        file_name = "1_time_stamps.txt"
+        print_vel = 0.4 #TODO
         
+        Times_string = ""
+        material_level_at_start = input("Enter material level at start:")
+        file_name = material_level_at_start + "_0p4_time_stamps.txt"
+
         if os.path.exists(file_name):
             a = input('A file exists with similar name. Are you sure you want to proceed?')
         file = open(file_name, "w")
@@ -175,6 +178,7 @@ class PrintLines(Node):
 
             sleep(0.2)
             file.write('Starting at time: ' + str(create_relative_timestamp()) + '\nline_x: ' + str(line_x) + '\nline_start_y: ' + str(line_start_y) + '\nprint_end_y: ' + str(print_end_y) + '\nline_end_y: ' + str(line_end_y) + '\n')
+            Times_string = Times_string + str(create_relative_timestamp()) + ' '
             curr_needle_pos = self.needle_loc()
             file.write('Actual needle position: x: ' + str(curr_needle_pos.position.x) + ' y: ' + str(curr_needle_pos.position.y) + ' z: ' + str(curr_needle_pos.position.z) + '\n')
             file.write('\n')
@@ -189,6 +193,7 @@ class PrintLines(Node):
                     needle_pos_time = np.vstack((needle_pos_time,np.asarray([self.curr_pose.position.x,self.curr_pose.position.y,self.curr_pose.position.z,create_relative_timestamp()])))
                 if(entered):
                     file.write('Time stamp per user request: ' + str(create_relative_timestamp()) + '\n')
+                    Times_string = Times_string + str(create_relative_timestamp()) + ' '
                     curr_needle_pos = self.needle_loc()
                     file.write('Actual needle position: x: ' + str(curr_needle_pos.position.x) + ' y: ' + str(curr_needle_pos.position.y) + ' z: ' + str(curr_needle_pos.position.z) + '\n')
                     file.write('\n')
@@ -200,6 +205,7 @@ class PrintLines(Node):
                 if(flag == False and self.is_close_pos(self.needle_loc(), print_end_pose)):
                     flag = True
                     file.write('Injection stopped at time: ' + str(create_relative_timestamp()) + '\n')
+                    Times_string = Times_string + str(create_relative_timestamp()) + ' '
                     curr_needle_pos = self.needle_loc()
                     file.write('Actual needle position: x: ' + str(curr_needle_pos.position.x) + ' y: ' + str(curr_needle_pos.position.y) + ' z: ' + str(curr_needle_pos.position.z) + '\n')
                     file.write('\n')
@@ -210,6 +216,7 @@ class PrintLines(Node):
             self.goal_state = False
 
             file.write('End line reached at time: ' + str(create_relative_timestamp()) + '\n')
+            Times_string = Times_string + str(create_relative_timestamp())
             curr_needle_pos = self.needle_loc()
             file.write('Actual needle position: x: ' + str(curr_needle_pos.position.x) + ' y: ' + str(curr_needle_pos.position.y) + ' z: ' + str(curr_needle_pos.position.z) + '\n')
             file.write('\n')
@@ -220,6 +227,12 @@ class PrintLines(Node):
         sleep(0.1)
         file.close()
         # needle_position_file.close()
+        file_name_2 = material_level_at_start + '_0p4_Times_string.txt'
+        file2 = open(file_name_2, 'w')
+        file2.write(Times_string)
+        file2.close()
+
+
 
         
         print('Take me to shooting pose!')
@@ -229,14 +242,14 @@ class PrintLines(Node):
         shooting_pose.position.z = 0.22
         shooting_pose.orientation = (Rotation.from_ABC([180,0,180],True)).as_geometry_orientation()
 
-        response = self.send_request_frame(shooting_pose, lin_vel*2, 'EE')
+        response = self.send_request_frame(shooting_pose, lin_vel*5, 'EE')
         self.wait_for_goal()
         
 
-
+        npfilename = material_level_at_start + '_0p4_needle_array_data.npy'
         curr_needle_pos = self.needle_loc()
         needle_pos_time = np.vstack((needle_pos_time,np.asarray([curr_needle_pos.position.x,curr_needle_pos.position.y,curr_needle_pos.position.z,create_relative_timestamp()])))
-        np.save('2_needle_array_data.npy', needle_pos_time)
+        np.save(npfilename, needle_pos_time)
         sleep(2)
 
     def is_close_pos(self, Pose1, Pose2, pos_thresh=0.0005):
@@ -268,7 +281,7 @@ def main(args=None):
     home_pose = Pose()
     home_pose.position.x = 0.6
     home_pose.position.y = 0.14
-    home_pose.position.z = 0.45
+    home_pose.position.z = 0.35
     home_pose.orientation = (Rotation.from_ABC([180,0,180],True)).as_geometry_orientation()
 
     node.go_home(home_pose, 0.02)
