@@ -436,6 +436,73 @@ class PrintLines(Node):
 
         return
 
+    def in_plane_circ_arc(self, inj_rate, lin_vel, arc_radius, arc_angle):
+        # ICRA 2025
+        # Creates a circular arc with arc radius of arc_radius
+        # cup_center, cup_radius and material_height are obtained by running the appropriate calibrations in admittance mode  
+        # arc_angle in degrees
+        
+        dummy_vel = 0.01
+
+        material_height = float(input('material_height: '))
+        cup_radius = float(input('cup_radius: '))
+        cup_center = Pose()
+        cup_center.position.x = float(input('cup_center.position.x: '))
+        cup_center.position.y = float(input('cup_center.position.y: '))
+        cup_center.position.z = float(input('cup_center.position.z: '))
+        cup_center.orientation = (Rotation.from_ABC([180,0,180],True)).as_geometry_orientation()
+
+        if(arc_radius>0.8*cup_radius):
+            print('arc radius is too large relative to cup radius.')
+            return
+
+        print_depth = 0.06 #How much to go under the surface to print?
+
+        arc_center = copy.deepcopy(cup_center)
+        arc_center.position.z = material_height - print_depth
+
+        arc_angle = arc_angle * np.pi/180.0
+
+        points = []
+
+        resolution = 1 #degrees
+
+        first_point = copy.deepcopy(arc_center)
+        first_point.position.x += np.cos(-arc_angle/2.0)
+        first_point.position.y += np.sin(-arc_angle/2.0)
+        first_point.position.z += 2*print_depth
+
+
+        for i in range(arc_angle/resolution + 1):
+
+            midpoint = copy.deepcopy(arc_center)
+            midpoint.position.x += np.cos(-arc_angle/2.0 +i*resolution)
+            midpoint.position.y += np.sin(-arc_angle/2.0 +i*resolution)
+
+            points.append(midpoint)
+
+        last_point = copy.deepcopy(arc_center)
+        last_point.position.x += np.cos(+arc_angle/2.0)
+        last_point.position.y += np.sin(+arc_angle/2.0)
+        last_point.position.z += 2*print_depth
+
+        response = self.send_request(first_point, dummy_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+        sleep(1.0)
+        a = input('Press Enter to continue: ')
+
+        response = self.send_request_FFM(points, lin_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+        sleep(1.0)
+
+        response = self.send_request(last_point, lin_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+
+        return
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -452,7 +519,7 @@ def main(args=None):
     sleep(2)
     wait_input = input('Press Enter to Print:')
 
-    node.print_lines_arc(home_pose, lin_vel)
+    node.in_plane_circ_arc(0.2, 0.002, 0.01, 90.0)
 
     sleep(2)
     node.go_home(home_pose, 0.005)
