@@ -13,11 +13,12 @@ from .admittance_controller import AdmittanceController
 from .lbr_base_position_command_node import LBRBasePositionCommandNode
 
 capture_request = False
+edge_calib_req = False
 
 
 
 def listen_for_keypress(node):
-    global capture_request
+    global capture_request, edge_calib_req
     while rclpy.ok():
         # Check for user input
         if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
@@ -28,7 +29,10 @@ def listen_for_keypress(node):
                 break
             if line == 'c':
                 capture_request = True
-                print('Capture requested')
+                print('Pivot Calibration: Capture requested.')
+            if line == 'h':
+                edge_calib_req = True
+                print('Edge Calibration: Capture requested.')
 
 class PivotCalibrationNode(LBRBasePositionCommandNode):
     def __init__(self, node_name: str = "pivot_calib") -> None:
@@ -37,7 +41,7 @@ class PivotCalibrationNode(LBRBasePositionCommandNode):
         # parameters
         self.declare_parameter("base_link", "link_0")
         self.declare_parameter("end_effector_link", "link_ee")
-        self.declare_parameter("f_ext_th", [2.0, 2.0, 8.0, 0.5, 0.5, 0.5])
+        self.declare_parameter("f_ext_th", [2.0, 2.0, 8.0, 10.0, 10.0, 10.0])
         self.declare_parameter("dq_gains", [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         self.declare_parameter("dx_gains", [0.2, 0.2, 0.2, 0.4, 0.4, 0.4])
         self.declare_parameter("exp_smooth", 0.95)
@@ -70,6 +74,8 @@ class PivotCalibrationNode(LBRBasePositionCommandNode):
         self.curr_pose = Pose()
 
         self.Pivot_Calibration_Poses = []
+
+        self.Edge_Calibration_Poses = []
 
     def _log_parameters(self) -> None:
         self.get_logger().info("*** Parameters:")
@@ -109,17 +115,31 @@ class PivotCalibrationNode(LBRBasePositionCommandNode):
 
     def curr_pose_update(self, msg):
         self.curr_pose = msg
-        global capture_request
-        if capture_request:
+        global capture_request, edge_calib_req
+        if capture_request: #Capturing the pose of Dali for performing pivot calibration
             self.Pivot_Calibration_Poses.append(msg)
-            print('Pose Added! Total number of poses: {}'.format(len(self.Pivot_Calibration_Poses)))
+            print('Pivot Calibration: Pose Added! Total number of poses is {}'.format(len(self.Pivot_Calibration_Poses)))
             if(len(self.Pivot_Calibration_Poses)>2):
                 tip, divot, resid_dist = self.run_pivot_calibration(self.Pivot_Calibration_Poses)
                 print('Tip wrt EE [m]:', tip)
                 print('Divot Location [m]:', divot)
                 print('Residual distances for each observation [m]:', resid_dist, '\n')
+            capture_request = False
 
-        capture_request = False
+        if edge_calib_req: #Capture the edges of a container to find the center of the container
+            self.Edge_Calibration_Poses.append(msg)
+            print('Edge Calibration: Pose Added! Total number of poses is {}'.format(len(self.Edge_Calibration_Poses)))
+            if(len(self.Edge_Calibration_Poses)>2):
+                center, radius, height = self.run_edge_calibration(self.Edge_Calibration_Poses)
+                print('Center wrt Robot Base Frame: ', center)
+                print('Radius: ', radius)
+                print('height: ', height)
+            edge_calib_req = False
+
+
+
+
+
 
     def run_pivot_calibration(self, poses):
         # poses: a list of geometry_msgs.msg.Pose objects, containing position (x,y,z)
@@ -143,6 +163,39 @@ class PivotCalibrationNode(LBRBasePositionCommandNode):
         tip = (x[0,0], x[1,0], x[2,0])
         divot = (x[3,0], x[4,0], x[5,0])
         return (tip, divot, resid_dist)
+
+    def run_edge_calibration(self, points):
+
+        # Convert the points into numpy arrays for easier manipulation
+        x = np.array([point.position.x for point in points])
+        y = np.array([point.position.y for point in points])
+        z = np.array([point.position.z for point in points])
+        center, radius = self.fit_circle_to_points(x,y)
+
+        z = np.mean(z)
+
+        return center, radius, z
+
+
+
+    def fit_circle_to_points(self, x, y):  #Fits the best circle to the points (x,y)
+        # Define the A matrix (for the least squares fitting)
+        A = np.c_[x*2, y*2, np.ones(len(x))]
+        
+        # Define the B matrix (distances from origin squared)
+        B = x**2 + y**2
+        
+        # Solve the least squares problem
+        C, D, E = np.linalg.lstsq(A, B, rcond=None)[0]
+        
+        # The center of the circle
+        center_x = C
+        center_y = D
+        
+        # Radius of the circle
+        radius = np.sqrt(E + center_x**2 + center_y**2)
+        
+        return (center_x, center_y), radius
 
 
 
