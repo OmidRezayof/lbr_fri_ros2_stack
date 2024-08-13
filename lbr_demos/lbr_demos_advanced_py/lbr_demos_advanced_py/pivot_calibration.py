@@ -8,25 +8,28 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Pose
 
-capture_request = False
-edge_calib_req = False
+capture_request = 'None'
 
 def listen_for_keypress(node):
-    global capture_request, edge_calib_req
+    global capture_request
     while rclpy.ok():
         # Check for user input
         if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
             line = sys.stdin.readline().strip()
-            if line == 'e':
+            if line == 'q':
                 print("Shutting down...")
                 rclpy.shutdown()
                 break
-            if line == 'c':
-                capture_request = True
+            if line == 'p':
+                capture_request = line
                 print('Pivot Calibration: Capture requested.')
             if line == 'h':
-                edge_calib_req = True
+                capture_request = line
+                print('Height Calibration: Capture requested.')
+            if line == 'e':
+                capture_request = line
                 print('Edge Calibration: Capture requested.')
+
 
 class PivotCalibrationNode(Node):
     def __init__(self, node_name: str = "pivot_calib") -> None:
@@ -39,20 +42,24 @@ class PivotCalibrationNode(Node):
         self.curr_pose = Pose()
 
         self.Pivot_Calibration_Poses = []
-
+        self.Height_Calibration_Poses = []
         self.Edge_Calibration_Poses = []
 
     
     def curr_pose_update(self, msg):
         self.curr_pose = msg
-        global capture_request, edge_calib_req
+        global capture_request
         if not self._init:
-            print('Press "c" for capturing a Pivot Calibration pose,')
-            print('Press "h" for capturing an Edge Calibration pose,')
-            print('Press "e" to quit.')
+            print('Enter "p" for capturing a Pivot Calibration pose,')
+            print('Enter "e" for capturing an Edge Calibration pose,')
+            print('Enter "h" for capturing a Height Calibration pose,')
+            print('Enter "q" to quit.')
+            self._init = True
             return
 
-        if capture_request: #Capturing the pose of Dali for performing pivot calibration
+        # NOTE: All the positions (except for pivot calibration) are reported as the position of the EE after the calibraiton.
+         
+        if capture_request == 'p': #Capturing the pose of Dali for performing pivot calibration
             self.Pivot_Calibration_Poses.append(msg)
             print('Pivot Calibration: Pose Added! Total number of poses is {}'.format(len(self.Pivot_Calibration_Poses)))
             if(len(self.Pivot_Calibration_Poses)>2):
@@ -60,9 +67,9 @@ class PivotCalibrationNode(Node):
                 print('Tip wrt EE [m]:', tip)
                 print('Divot Location [m]:', divot)
                 print('Residual distances for each observation [m]:', resid_dist, '\n')
-            capture_request = False
+            capture_request = 'None'
 
-        if edge_calib_req: #Capture the edges of a container to find the center of the container
+        if capture_request == 'e': #Capture the edges of a container to find the center of the container
             self.Edge_Calibration_Poses.append(msg)
             print('Edge Calibration: Pose Added! Total number of poses is {}'.format(len(self.Edge_Calibration_Poses)))
             if(len(self.Edge_Calibration_Poses)>2):
@@ -70,7 +77,18 @@ class PivotCalibrationNode(Node):
                 print('Center wrt Robot Base Frame: ', center)
                 print('Radius: ', radius)
                 print('height: ', height)
-            edge_calib_req = False
+            capture_request = 'None'
+
+        if capture_request == 'h': #Capture the height of the material inside the container to find the height (level) of the material
+            self.Height_Calibration_Poses.append(msg)
+            print('Height Calibration: Pose Added! Total number of poses is {}'.format(len(self.Height_Calibration_Poses)))
+
+            height = np.array([point.position.z for point in self.Height_Calibration_Poses])
+            height = np.mean(height)
+            print('Average Material Height: ', height)
+            
+            capture_request = 'None'
+
 
 
     def run_pivot_calibration(self, poses):
