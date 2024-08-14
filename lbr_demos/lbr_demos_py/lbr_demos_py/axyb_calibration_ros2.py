@@ -105,6 +105,14 @@ class axyb_calibration_node(Node):
         self.wait_for_goal()    
         return 
 
+    def is_close(self, new_pose, pos_thresh = 0.15):
+        translation_vec = np.asarray([self.curr_pose.position.x - new_pose.position.x,
+                                      self.curr_pose.position.y - new_pose.position.y,
+                                      self.curr_pose.position.z - new_pose.position.z])
+        if np.linalg.norm(translation_vec) < pos_thresh:
+            print('Poses too close. Finding another random pose.')
+        return np.linalg.norm(translation_vec) < pos_thresh
+
 
 
 
@@ -379,6 +387,15 @@ def main():
         reach_pose.position.z = place[2]
         reach_pose.orientation = (asbr.Rotation.from_ABC([180.0,0.0,180.0],True)).as_geometry_orientation() 
         lin_vel = 0.02 #m/s TODO: check if the position is very close to where robot is rn
+
+        while(client.is_close(reach_pose)):
+            place = np.random.uniform([0.550, -0.225, 0.380], [0.600, 0.225, 0.560]) #INCREASE ROTATIONS
+            reach_pose = geomsg.Pose()
+            reach_pose.position.x = place[0]
+            reach_pose.position.y = place[1]
+            reach_pose.position.z = place[2]
+            reach_pose.orientation = (asbr.Rotation.from_ABC([180.0,0.0,180.0],True)).as_geometry_orientation()
+
 
         response = client.send_request(reach_pose, lin_vel)
         print(f'Success: {response.success}')
