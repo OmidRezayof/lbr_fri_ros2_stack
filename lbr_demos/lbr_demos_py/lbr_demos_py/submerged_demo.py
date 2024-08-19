@@ -28,7 +28,6 @@ class PrintLines(Node):
         self.FFM_request = FreeFormMove.Request()
         self.reach_subs = self.create_subscription(Bool, 'goal_reached_top', self.goal_reach_update, 1)
         self.curr_pose_subs = self.create_subscription(Pose, 'state/pose', self.curr_pose_update, 1)
-
         self.goal_state = False
         self.commiunication_rate = 0.01
         self.printer_pub = self.create_publisher(Float32, '/syringevel', 1) 
@@ -436,27 +435,21 @@ class PrintLines(Node):
 
         return
 
-    def in_plane_circ_arc(self, inj_rate, lin_vel, arc_radius, arc_angle):
+    def in_plane_circ_arc(self, inj_rate, lin_vel, arc_radius, arc_angle, material_height, cup_radius, cup_center):
         # ICRA 2025
         # Creates a circular arc with arc radius of arc_radius
         # cup_center, cup_radius and material_height are obtained by running the appropriate calibrations in admittance mode  
         # arc_angle in degrees
         
         dummy_vel = 0.01
-
-        material_height = float(input('material_height: '))
-        cup_radius = float(input('cup_radius: '))
-        cup_center = Pose()
-        cup_center.position.x = float(input('cup_center.position.x: '))
-        cup_center.position.y = float(input('cup_center.position.y: '))
-        cup_center.position.z = float(input('cup_center.position.z: '))
+        
         cup_center.orientation = (Rotation.from_ABC([180,0,180],True)).as_geometry_orientation()
 
         if(arc_radius>0.8*cup_radius):
             print('arc radius is too large relative to cup radius.')
             return
 
-        print_depth = 0.06 #How much to go under the surface to print?
+        print_depth = 0.006 #How much to go under the surface to print?
 
         arc_center = copy.deepcopy(cup_center)
         arc_center.position.z = material_height - print_depth
@@ -465,37 +458,118 @@ class PrintLines(Node):
 
         points = []
 
-        resolution = 1 #degrees
+        resolution = 1 * np.pi/180.0 #degrees
 
         first_point = copy.deepcopy(arc_center)
-        first_point.position.x += np.cos(-arc_angle/2.0)
-        first_point.position.y += np.sin(-arc_angle/2.0)
-        first_point.position.z += 2*print_depth
+        first_point.position.x += arc_radius * np.cos(-arc_angle/2.0)
+        first_point.position.y += arc_radius * np.sin(-arc_angle/2.0)
+        # first_point.position.z += 2*print_depth
+
+        zero_point = copy.deepcopy(first_point)
+        zero_point.position.z += 2*print_depth
 
 
-        for i in range(arc_angle/resolution + 1):
+
+        for i in range(int(arc_angle/resolution + 1)):
 
             midpoint = copy.deepcopy(arc_center)
-            midpoint.position.x += np.cos(-arc_angle/2.0 +i*resolution)
-            midpoint.position.y += np.sin(-arc_angle/2.0 +i*resolution)
+            midpoint.position.x += arc_radius * np.cos(-arc_angle/2.0 +i*resolution)
+            midpoint.position.y += arc_radius * np.sin(-arc_angle/2.0 +i*resolution)
 
             points.append(midpoint)
 
         last_point = copy.deepcopy(arc_center)
-        last_point.position.x += np.cos(+arc_angle/2.0)
-        last_point.position.y += np.sin(+arc_angle/2.0)
+        last_point.position.x += arc_radius * np.cos(+arc_angle/2.0)
+        last_point.position.y += arc_radius * np.sin(+arc_angle/2.0)
         last_point.position.z += 2*print_depth
+
+        response = self.send_request(zero_point, dummy_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+        sleep(1.0)
+
 
         response = self.send_request(first_point, dummy_vel)
         print(f'Success: {response.success}')
         self.wait_for_goal()
-        sleep(1.0)
-        a = input('Press Enter to continue: ')
+        self.printer_pub.publish(Float32(data=inj_rate))
+        sleep(5.0)
 
         response = self.send_request_FFM(points, lin_vel)
         print(f'Success: {response.success}')
         self.wait_for_goal()
+        self.printer_pub.publish(Float32(data=-inj_rate))
+        sleep(1.2)
+        self.printer_pub.publish(Float32(data=0.0))
+        sleep(6.0)
+
+        response = self.send_request(last_point, lin_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+
+        return
+
+    def in_plane_line(self, inj_rate, lin_vel, arc_radius, arc_angle, material_height, cup_radius, cup_center):
+        # ICRA 2025
+        # Creates a straight line between the two beginning of the arc
+        # cup_center, cup_radius and material_height are obtained by running the appropriate calibrations in admittance mode  
+        # arc_angle in degrees
+        
+        
+        dummy_vel = 0.01
+        
+        cup_center.orientation = (Rotation.from_ABC([180,0,180],True)).as_geometry_orientation()
+
+        if(arc_radius>0.8*cup_radius):
+            print('arc radius is too large relative to cup radius.')
+            return
+
+        print_depth = 0.006 #How much to go under the surface to print?
+
+        arc_center = copy.deepcopy(cup_center)
+        arc_center.position.z = material_height - print_depth
+
+        arc_angle = arc_angle * np.pi/180.0
+
+        points = []
+
+        resolution = 1 * np.pi/180.0 #degrees
+
+        first_point = copy.deepcopy(arc_center)
+        first_point.position.x += arc_radius * np.cos(-arc_angle/2.0)
+        first_point.position.y += arc_radius * np.sin(-arc_angle/2.0)
+        # first_point.position.z += 2*print_depth
+
+        zero_point = copy.deepcopy(first_point)
+        zero_point.position.z += 2*print_depth
+
+        end_point = copy.deepcopy(arc_center)
+        end_point.position.x += arc_radius * np.cos(+arc_angle/2.0)
+        end_point.position.y += arc_radius * np.sin(+arc_angle/2.0)
+
+
+        last_point = copy.deepcopy(end_point)
+        last_point.position.z += 2*print_depth
+
+        response = self.send_request(zero_point, dummy_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
         sleep(1.0)
+
+
+        response = self.send_request(first_point, dummy_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+        # self.printer_pub.publish(Float32(data=inj_rate))
+        sleep(5.0)
+
+        response = self.send_request(end_point, lin_vel)
+        print(f'Success: {response.success}')
+        self.wait_for_goal()
+        # self.printer_pub.publish(Float32(data=-inj_rate))
+        sleep(1.2)
+        self.printer_pub.publish(Float32(data=0.0))
+        sleep(6.0)
 
         response = self.send_request(last_point, lin_vel)
         print(f'Success: {response.success}')
@@ -504,14 +578,15 @@ class PrintLines(Node):
         return
 
 
+
 def main(args=None):
     rclpy.init(args=args)
     node = PrintLines()
     lin_vel = 0.002
     home_pose = Pose()
     home_pose.position.x = 0.65
-    home_pose.position.y = 0.0
-    home_pose.position.z = 0.354 #was 40
+    home_pose.position.y = 0.05
+    home_pose.position.z = 0.454 #was 40
     home_pose.orientation = (Rotation.from_ABC([180,0,180],True)).as_geometry_orientation()
 
     node.go_home(home_pose, 0.01)
@@ -519,7 +594,20 @@ def main(args=None):
     sleep(2)
     wait_input = input('Press Enter to Print:')
 
-    node.in_plane_circ_arc(0.2, 0.002, 0.01, 90.0)
+
+    material_height = 0.3002896648425517
+    cup_radius = 0.045569805327638734
+    cup_center = Pose()
+    # cup_center.position.x = float(input('cup_center.position.x: '))
+    # cup_center.position.y = float(input('cup_center.position.y: '))
+    # cup_center.position.z = float(input('cup_center.position.z: '))
+    
+
+    for i in range(3):
+        cup_center.position.x = 0.6497431364133959 - i*0.012
+        cup_center.position.y = 0.05180636185095244
+        cup_center.position.z = 0.4074247254589817
+        node.in_plane_line(0.35, 0.001, 0.02, 150.0, material_height, cup_radius, cup_center)
 
     sleep(2)
     node.go_home(home_pose, 0.005)
