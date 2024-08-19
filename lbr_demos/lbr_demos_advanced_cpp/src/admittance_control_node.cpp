@@ -14,9 +14,9 @@ public:
       : LBRBasePositionCommandNode("admittance_control", options) {
     this->declare_parameter<std::string>("base_link", "link_0");
     this->declare_parameter<std::string>("end_effector_link", "link_ee");
-    this->declare_parameter<std::vector<double>>("f_ext_th", {2., 2., 2., 0.5, 0.5, 0.5});
-    this->declare_parameter<std::vector<double>>("dq_gains", {2., 2., 2., 2., 2., 2., 2.});
-    this->declare_parameter<std::vector<double>>("dx_gains", {0.1, 0.1, 0.1, 0.1, 0.1, 0.1});
+    this->declare_parameter<std::vector<double>>("f_ext_th", {2., 2., 5., 10000.0, 10000.0, 10000.0});
+    this->declare_parameter<std::vector<double>>("dq_gains", {1., 1., 1., 1., 1., 1., 1.});
+    this->declare_parameter<std::vector<double>>("dx_gains", {0.4, 0.4, 0.3, 0.000001, 0.000001, 0.000001});
     this->declare_parameter<double>("exp_smooth", 0.95);
 
     exp_smooth_ = this->get_parameter("exp_smooth").as_double();
